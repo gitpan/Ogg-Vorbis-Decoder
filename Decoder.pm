@@ -1,177 +1,61 @@
 package Ogg::Vorbis::Decoder;
 
-use 5.006;
 use strict;
-use warnings;
-use Carp;
+use vars qw($VERSION);
 
-our $VERSION = '0.02';
+$VERSION = '0.5';
 
-use Inline C => 'DATA',
-					LIBS => '-logg -lvorbis -lvorbisfile',
-					TYPEMAPS => 'typemap',
-					VERSION => '0.02',
-					NAME => 'Ogg::Vorbis::Decoder';
+BOOT_XS: {
+        # If I inherit DynaLoader then I inherit AutoLoader
+	require DynaLoader;
 
-# constructors
+	# DynaLoader calls dl_load_flags as a static method.
+	*dl_load_flags = DynaLoader->can('dl_load_flags');
 
-sub open {
-	my ($id, $path) = @_;
-	$id = ref($id) || $id;
-	_new($id, $path);
+	do {__PACKAGE__->can('bootstrap') ||
+		\&DynaLoader::bootstrap}->(__PACKAGE__,$VERSION);
 }
 
-# decoding methods
-
-sub read {
-	my ($self, $buffer) = (shift, shift);
-	my %params = (	buffsize => 4096,  # 4096 byte buffer
-									bigendianp => 0, # little endian
-									word => 2, # 16-bit words
-									signed => 1, # signed data
-									bitstream => 0 # dummy value
-								);
-	my %cust = @_;
-	while (my ($k, $v) = each %cust) {
-		if (exists $params{$k}) {
-			if ($k eq 'buffsize' && $v !~ /^\d+$/) {
-				carp "$v is not a valid buffsize, using default" if $^W;
-			} elsif ($k eq 'bigendianp' && ($v ne '0' || $v ne '1')) {
-				carp "$v is not a valid bigendianp, using default" if $^W;
-			} elsif ($k eq 'word' && ($v ne '1' || $v ne '2')) {
-				carp "$v is not a valid word setting, using default" if $^W;
-			} elsif ($k eq 'signed' && ($v ne '0' || $v ne '1')) {
-				carp "$v is not a valid signed setting, using default" if $^W;
-			} elsif ($k eq 'bitstream' && $v !~ /^d+$/) {
-				carp "$v is not a valid bitstream, using default" if $^W;
-			} elsif ($k eq 'bitstream') {
-				$self->{BSTREAM} = $v;
-			} else {
-				$params{$k} = $v;
-			}
-		} else {
-			carp "$k is not a valid parameter, ignoring" if $^W;
-		}
-	}
-	return $self->_read($buffer, $params{buffsize}, $params{bigendianp},
-		$params{word}, $params{signed});
-}
-
-sub raw_seek {
-	my ($self, $pos) = @_;
-	if ($pos !~ /^-?\d+$/) {
-		carp "$pos is not a valid position (long), aborting seek" if $^W;
-		return undef;
-	}
-
-	return $self->_raw_seek($pos);
-}
-
-sub pcm_seek {
-	my ($self, $pos, $page) = @_;
-	$page ||= 0;
-	$page = 1 if $page;
-	if ($pos !~ /^-?\d+$/) {
-		carp "$pos not a valid postion (ogg_int64_t), aborting seek" if $^W;
-		return undef;
-	}
-	
-	return $self->_pcm_seek($pos, $page);
-}
-
-sub time_seek {
-	my ($self, $pos, $page) = @_;
-	$page ||= 0;
-	$page = 1 if $page;
-	if ($pos !~ /^([+-]?)(?=\d|\.\d)\d*(\.\d*)?([Ee]([+-]?\d+))?$/) {
-		carp "$pos is not a valid position (double), aborting seek" if $^W;
-		return undef;
-	}
-
-	return $self->_time_seek($pos, $page);
-}
-
-sub get_current_bitstream {
+sub current_bitstream {
 	my $self = shift;
-	return $self->{BSTREAM};
+	return $self->{'BSTREAM'};
 }
 
-# informational methods -- see Ogg::Vorbis::Header for
-# non-decoding-specific info
+sub info {
+	my ($self, $key) = @_;
 
-sub bitrate {
-	my ($self, $stream) = @_;
-	$stream ||= -1;
-	if ($stream !~ /^-?\d+$/) {
-		carp "$stream is not a valid stream, using default value" if $^W;
-		$stream = -1;
-	}
+	$self->_read_info() unless $self->{'INFO'};
 
-	return $self->_bitrate($stream);
+	return $self->{'INFO'}->{$key} if $key;
+	return $self->{'INFO'};
 }
 
-sub serialnumber {
-	my ($self, $stream) = @_;
-	$stream ||= -1;
-	if ($stream !~ /^-?\d+$/) {
-		carp "$stream is not a valid stream, using default value" if $^W;
-		$stream = -1;
-	}
-
-	return $self->_serialnumber($stream);
-}
-
-sub raw_total {
-	my ($self, $stream) = @_;
-	$stream ||= -1;
-	if ($stream !~ /^-?\d+$/) {
-		carp "$stream is not a valid stream, using default" if $^W;
-		$stream = -1;
-	}
-
-	return $self->_raw_total($stream);
-}
-
-sub pcm_total {
-	my ($self, $stream) = @_;
-	$stream ||= -1;
-	if ($stream !~ /^-?\d+$/) {
-		carp "$stream is not a valid stream, using default" if $^W;
-		$stream = -1;
-	}
-
-	return $self->_pcm_total($stream);
-}
-
-sub time_total {
-	my ($self, $stream) = @_;
-	$stream ||= -1;
-	if ($stream !~ /^-?\d+$/) {
-		carp "$stream is not a valid stream, using default" if $^W;
-		$stream = -1;
-	}
-
-	return $self->_time_total($stream);
-}
-
-sub raw_tell {
+sub comment_tags {
 	my $self = shift;
-	return $self->_raw_tell;
+
+	$self->_read_comments() unless $self->{'COMMENTS'};
+
+	return map { uc } keys %{$self->{'COMMENTS'}};
 }
 
-sub pcm_tell {
+sub comment {
 	my $self = shift;
-	return $self->_pcm_tell;
-}
+	my $key  = shift || return undef;
 
-sub time_tell {
-	my $self = shift;
-	return $self->_time_tell;
+	$self->_read_comments() unless $self->{'COMMENTS'};
+
+	my $result = $self->{'COMMENTS'}->{uc $key};
+
+	if (scalar @$result > 1) {
+		return @$result;
+	} else {
+		return $result->[0];
+	}
 }
 
 1;
-__DATA__
-# Below is stub documentation for your module. You better edit it!
+
+__END__
 
 =head1 NAME
 
@@ -186,6 +70,17 @@ Ogg::Vorbis::Decoder - An object-oriented Ogg Vorbis to decoder
     # do something with the PCM stream
   }
 
+  OR
+
+  open OGG, "song.ogg" or die $!;
+  my $decoder = Ogg::Vorbis::Decoder->open(\*OGG);
+
+  OR
+
+  # can also be IO::Socket or any other IO::Handle subclass.
+  my $fh = IO::Handle->new("song.ogg");
+  my $decoder = Ogg::Vorbis::Decoder->open($fh);
+
 =head1 DESCRIPTION
 
 This module provides users with Decoder objects for Ogg Vorbis files.
@@ -199,11 +94,10 @@ included in future releases.
 
 =head2 C<open ($filename)>
 
-Opens an Ogg Vorbis file for decoding.  It opens a handle to the 
-file and initializes all of the internal vorbis decoding structures.
-Note that the object will maintain open file descriptors until the
-object is collected by the garbage handler.  Returns C<undef> on
-failure.
+Opens an Ogg Vorbis file for decoding. It opens a handle to the file or uses
+an existing handle and initializes all of the internal vorbis decoding
+structures.  Note that the object will maintain open file descriptors until
+the object is collected by the garbage handler. Returns C<undef> on failure.
 
 =head1 INSTANCE METHODS
 
@@ -298,13 +192,19 @@ Returns the current offset in seconds.
 
 =head1 REQUIRES
 
-Inline::C, libogg, libvorbis, libogg-dev, libvorbis-dev
+libogg, libvorbis, libogg-dev, libvorbis-dev
 
-=head1 AUTHOR
+=head1 CURRENT AUTHOR
+
+Dan Sully E<lt>daniel@cpan.orgE<gt>
+
+=head1 AUTHOR EMERITUS
 
 Dan Pemstein E<lt>dan@lcws.orgE<gt>
 
 =head1 COPYRIGHT
+
+Copyright (c) 2004, Dan Sully.  All Rights Reserved.
 
 Copyright (c) 2003, Dan Pemstein.  All Rights Reserved.
 
@@ -316,210 +216,6 @@ with this module (LICENSE.GPL).
 
 =head1 SEE ALSO
 
-L<Ogg::Vorbis::Header>, L<Inline::C>, L<Audio::Ao>.
+L<Ogg::Vorbis::Header>
 
 =cut
-
-__C__
-
-#include <stdio.h>
-#include <string.h>
-#include <vorbis/codec.h>
-#include <vorbis/vorbisfile.h>
-
-SV* _new(char *class, char *path)
-{
-	/* A few variables */
-	FILE *fd;
-	OggVorbis_File *vf =
-		(OggVorbis_File *) malloc (sizeof(OggVorbis_File));
-
-	/* Create our new hash and a ref to it */
-	HV *hash = newHV();
-	SV *obj_ref = newRV_noinc((SV*) hash);
-
-	/* Open the vorbis stream file */
-	if ((fd = fopen(path, "r")) == NULL)
-		return &PL_sv_undef;
-	
-	/*if (ov_test(fd, vf, NULL, 0) < 0) {
-		fclose(fd);
-		return &PL_sv_undef;
-	}*/
-
-	if (ov_open(fd, vf, NULL, 0) < 0) {
-	/*if (ov_test_open(vf) < 0) {*/
-		fclose(fd);
-		return &PL_sv_undef;
-	}
-
-	/* Values stored at base level */
-	hv_store(hash, "PATH", 4, newSVpv(path, 0), 0);
-	hv_store(hash, "VFILE", 5, newSViv((IV) vf), 0);
-	hv_store(hash, "BSTREAM", 7, newSViv(0), 0);
-
-	/* Bless the hashref to create a class object */
-	sv_bless(obj_ref, gv_stashpv(class, FALSE));
-
-	return obj_ref;
-}
-
-long _read(	SV* obj, SV *buffer, int buffsize, int bigendianp,
-						int word, int sgned)
-{
-	OggVorbis_File *vf;
-	int cbs;
-	int res;
-	SV *buffdr;
-	char buffptr[buffsize];
-	HV *hash = (HV *) SvRV(obj);
-	vf = (OggVorbis_File *) SvIV(*(hv_fetch(hash, "VFILE", 5, 0)));
-	cbs = (int) SvIV(*(hv_fetch(hash, "BSTREAM", 7, 0)));
-
-	res = ov_read(vf, buffptr, buffsize, bigendianp, word, sgned, &cbs);
-	
-	sv_setiv(*hv_fetch(hash, "BSTREAM", 7, 0), (IV) cbs);
-	buffdr = (SV *) SvRV(buffer);
-	sv_setpvn(buffdr, buffptr, res);
-	return res;
-}
-
-int _raw_seek (SV* obj, long pos)
-{
-	OggVorbis_File *vf;
-	HV *hash = (HV *) SvRV(obj);
-	vf = (OggVorbis_File *) SvIV(*(hv_fetch(hash, "VFILE", 5, 0)));
-	
-	return ov_raw_seek(vf, pos);
-}
-
-int _pcm_seek (SV* obj, ogg_int64_t pos, int page)
-{
-	OggVorbis_File *vf;
-	HV *hash = (HV *) SvRV(obj);
-	vf = (OggVorbis_File *) SvIV(*(hv_fetch(hash, "VFILE", 5, 0)));
-	
-	if (page == 0)
-		return ov_pcm_seek(vf, pos);
-	else
-		return ov_pcm_seek_page(vf, pos);
-}
-
-int _time_seek (SV *obj, double pos, int page)
-{
-	OggVorbis_File *vf;
-	HV *hash = (HV *) SvRV(obj);
-	vf = (OggVorbis_File *) SvIV(*(hv_fetch(hash, "VFILE", 5, 0)));
-
-	if (page == 0)
-		return ov_time_seek(vf, pos);
-	else
-		return ov_time_seek_page(vf, pos);
-}
-
-long _bitrate (SV* obj, int i)
-{
-	OggVorbis_File *vf;
-	HV *hash = (HV *) SvRV(obj);
-	vf = (OggVorbis_File *) SvIV(*(hv_fetch(hash, "VFILE", 5, 0)));
-
-	return ov_bitrate(vf, i);
-}
-
-long bitrate_instant (SV* obj)
-{
-	OggVorbis_File *vf;
-	HV *hash = (HV *) SvRV(obj);
-	vf = (OggVorbis_File *) SvIV(*(hv_fetch(hash, "VFILE", 5, 0)));
-
-	return ov_bitrate_instant(vf);
-}
-
-long streams (SV* obj)
-{
-	OggVorbis_File *vf;
-	HV *hash = (HV *) SvRV(obj);
-	vf = (OggVorbis_File *) SvIV(*(hv_fetch(hash, "VFILE", 5, 0)));
-
-	return ov_streams(vf);
-}
-
-long seekable (SV* obj)
-{
-	OggVorbis_File *vf;
-	HV *hash = (HV *) SvRV(obj);
-	vf = (OggVorbis_File *) SvIV(*(hv_fetch(hash, "VFILE", 5, 0)));
-
-	return ov_seekable(vf);
-}
-
-long _serialnumber (SV* obj, int i)
-{
-	OggVorbis_File *vf;
-	HV *hash = (HV *) SvRV(obj);
-	vf = (OggVorbis_File *) SvIV(*(hv_fetch(hash, "VFILE", 5, 0)));
-
-	return ov_serialnumber(vf, i);
-}
-
-IV _raw_total (SV* obj, int i)
-{
-	OggVorbis_File *vf;
-	HV *hash = (HV *) SvRV(obj);
-	vf = (OggVorbis_File *) SvIV(*(hv_fetch(hash, "VFILE", 5, 0)));
-
-	return (IV) ov_raw_total(vf, i);
-}
-
-IV _pcm_total (SV* obj, int i)
-{
-	OggVorbis_File *vf;
-	HV *hash = (HV *) SvRV(obj);
-	vf = (OggVorbis_File *) SvIV(*(hv_fetch(hash, "VFILE", 5, 0)));
-
-	return (IV) ov_pcm_total(vf, i);
-}
-
-double _time_total (SV* obj, int i)
-{
-	OggVorbis_File *vf;
-	HV *hash = (HV *) SvRV(obj);
-	vf = (OggVorbis_File *) SvIV(*(hv_fetch(hash, "VFILE", 5, 0)));
-
-	return ov_time_total(vf, i);
-}
-
-IV _raw_tell (SV* obj)
-{
-	OggVorbis_File *vf;
-	HV *hash = (HV *) SvRV(obj);
-	vf = (OggVorbis_File *) SvIV(*(hv_fetch(hash, "VFILE", 5, 0)));
-
-	return (IV) ov_raw_tell(vf);
-}
-
-IV _pcm_tell (SV* obj)
-{
-	OggVorbis_File *vf;
-	HV *hash = (HV *) SvRV(obj);
-	vf = (OggVorbis_File *) SvIV(*(hv_fetch(hash, "VFILE", 5, 0)));
-
-	return (IV) ov_pcm_tell(vf);
-}
-
-double _time_tell (SV* obj)
-{
-	OggVorbis_File *vf;
-	HV *hash = (HV *) SvRV(obj);
-	vf = (OggVorbis_File *) SvIV(*(hv_fetch(hash, "VFILE", 5, 0)));
-
-	return ov_time_tell(vf);
-}
-
-void DESTROY (SV *obj) {
-	OggVorbis_File *vf;
-	HV *hash = (HV *) SvRV(obj);
-
-	vf = (OggVorbis_File *) SvIV(*(hv_fetch(hash, "VFILE", 5, 0)));
-	ov_clear(vf);
-}

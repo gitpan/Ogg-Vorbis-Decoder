@@ -1,24 +1,17 @@
-# Before `make install' is performed this script should be runnable with
-# `make test'. After `make install' it should work as `perl test.pl'
-
-#########################
-
-# change 'tests => 1' to 'tests => last_test_to_print';
+#!/usr/bin/perl -w
 
 use Test;
 use warnings;
-BEGIN { plan tests => 17 };
+
+BEGIN { plan tests => 20 };
+
 use Ogg::Vorbis::Decoder;
-ok(1); # If we made it this far, we're ok.
 
-#########################
-
-# Insert your test code below, the Test module is use()ed here so read
-# its man page ( perldoc Test ) for help writing this test script.
+ok(1);
 
 ok(my $ogg = Ogg::Vorbis::Decoder->open("test.ogg"));
 my $buffer;
-ok($ogg->read(\$buffer));
+ok($ogg->sysread($buffer));
 ok($ogg->bitrate);
 ok($ogg->bitrate_instant);
 ok($ogg->streams);
@@ -33,3 +26,8 @@ ok($ogg->time_tell);
 ok($ogg->raw_seek(0), 0);
 ok($ogg->pcm_seek(0), 0);
 ok($ogg->time_seek(0.0), 0);
+
+# test opening from a glob
+ok(open FH, "test.ogg" or die $!);
+ok($ogg = Ogg::Vorbis::Decoder->open(\*FH));
+ok(close(FH));
