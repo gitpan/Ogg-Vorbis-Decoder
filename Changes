@@ -1,0 +1,6 @@
+Revision history for Perl extension Ogg::Vorbis::Decoder.
+
+0.01  Fri Jan  3 17:33:52 2003
+	- original version; created by h2xs 1.21 with options
+		-XA -n Ogg::Vorbis::Decoder
+
