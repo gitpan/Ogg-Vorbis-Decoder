@@ -6,7 +6,8 @@
 # change 'tests => 1' to 'tests => last_test_to_print';
 
 use Test;
-BEGIN { plan tests => 14 };
+use warnings;
+BEGIN { plan tests => 17 };
 use Ogg::Vorbis::Decoder;
 ok(1); # If we made it this far, we're ok.
 
@@ -29,3 +30,6 @@ ok($ogg->time_total);
 ok($ogg->raw_tell);
 ok($ogg->pcm_tell);
 ok($ogg->time_tell);
+ok($ogg->raw_seek(0), 0);
+ok($ogg->pcm_seek(0), 0);
+ok($ogg->time_seek(0.0), 0);

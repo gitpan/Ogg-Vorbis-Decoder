@@ -5,11 +5,12 @@ use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 use Inline C => 'DATA',
 					LIBS => '-logg -lvorbis -lvorbisfile',
-					VERSION => '0.01',
+					TYPEMAPS => 'typemap',
+					VERSION => '0.02',
 					NAME => 'Ogg::Vorbis::Decoder';
 
 # constructors
@@ -82,12 +83,12 @@ sub time_seek {
 	my ($self, $pos, $page) = @_;
 	$page ||= 0;
 	$page = 1 if $page;
-	if ($pos =~ /^([+-]?)(?=\d|\.\d)\d*(\.\d*)?([Ee]([+-]?\d+))?$/) {
+	if ($pos !~ /^([+-]?)(?=\d|\.\d)\d*(\.\d*)?([Ee]([+-]?\d+))?$/) {
 		carp "$pos is not a valid position (double), aborting seek" if $^W;
 		return undef;
 	}
 
-	return $self->_raw_seek($pos, $page);
+	return $self->_time_seek($pos, $page);
 }
 
 sub get_current_bitstream {
@@ -180,10 +181,10 @@ Ogg::Vorbis::Decoder - An object-oriented Ogg Vorbis to decoder
 
   use Ogg::Vorbis::Decoder;
   my $decoder = Ogg::Vorbis::Decoder->open("song.ogg");
-	my $buffer;
-	while ((my $len = $decoder->read($buffer) > 0) {
-		# do something with the PCM stream
-	}
+  my $buffer;
+  while ((my $len = $decoder->read($buffer) > 0) {
+    # do something with the PCM stream
+  }
 
 =head1 DESCRIPTION
 
@@ -520,6 +521,5 @@ void DESTROY (SV *obj) {
 	HV *hash = (HV *) SvRV(obj);
 
 	vf = (OggVorbis_File *) SvIV(*(hv_fetch(hash, "VFILE", 5, 0)));
-	
 	ov_clear(vf);
 }
