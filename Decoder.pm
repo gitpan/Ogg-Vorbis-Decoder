@@ -3,7 +3,7 @@ package Ogg::Vorbis::Decoder;
 use strict;
 use vars qw($VERSION);
 
-$VERSION = '0.5';
+$VERSION = '0.6';
 
 BOOT_XS: {
         # If I inherit DynaLoader then I inherit AutoLoader

@@ -18,3 +18,7 @@ Revision history for Perl extension Ogg::Vorbis::Decoder.
     - Allow open to take a IO::Handle subclass, or an existing FH* glob.
     - Add comment/info functions to handle metadata from a stream.
 
+0.6  Tue Apr 13 23:27:53 PDT 2004
+
+    - Changes to compile under Win32 & MSVC++ 6.0
+    - Check for IO::Socket subclasses correctly.

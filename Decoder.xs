@@ -1,4 +1,4 @@
-/* $Id$ */
+/* $Id: Decoder.xs,v 1.3 2004/04/14 06:37:30 daniel Exp $ */
 
 #ifdef __cplusplus
 "C" {
@@ -13,9 +13,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
-#include <unistd.h>
 #include <errno.h>
 #include <stdlib.h>
+
+#ifdef _MSC_VER
+# define alloca            _alloca
+#endif
 
 #include <vorbis/codec.h>
 #include <vorbis/vorbisfile.h>
@@ -33,7 +36,7 @@
 int endian = host_is_big_endian();
 
 static size_t ovcb_read(void *ptr, size_t size, size_t nmemb, void *datasource);
-static int    ovcb_seek(void *datasource, int64_t offset, int whence);
+static int    ovcb_seek(void *datasource, ogg_int64_t offset, int whence);
 static int    ovcb_close(void *datasource);
 static long   ovcb_tell(void *datasource);
 
@@ -68,7 +71,7 @@ static size_t ovcb_read(void *ptr, size_t size, size_t nmemb, void *vdatasource)
 	return read_bytes;
 }
 
-static int ovcb_seek(void *vdatasource, int64_t offset, int whence) {
+static int ovcb_seek(void *vdatasource, ogg_int64_t offset, int whence) {
 
 	ocvb_datasource *datasource = vdatasource;
 
@@ -78,6 +81,7 @@ static int ovcb_seek(void *vdatasource, int64_t offset, int whence) {
 
 	/* For some reason PerlIO_seek fails miserably here. < 5.8.1 works */
 	/* return PerlIO_seek(datasource->stream, offset, whence); */
+	
 	return fseek(PerlIO_findFILE(datasource->stream), offset, whence);
 }
 
@@ -186,7 +190,7 @@ open(class, path)
 	memset(datasource, 0, sizeof(ocvb_datasource));
 
 	/* check and see if a pathname was passed in, otherwise it might be a
-	 * IO::Handle subclass, or even a *FH Glob */
+	 * IO::Socket subclass, or even a *FH Glob */
 	if (SvOK(path) && (SvTYPE(SvRV(path)) != SVt_PVGV)) {
 
 		if ((datasource->stream = PerlIO_open((char*)SvPV_nolen(path), "r")) == NULL) {
@@ -199,19 +203,24 @@ open(class, path)
 
 	} else if (SvOK(path)) {
 
-		/* dereference and get the SV* that contains the Magic & FH */
-		path = SvRV(path);
+		/* Did we get a Glob, or a IO::Socket subclass?
+		 *
+		 * XXX This should really be a class method so the caller
+		 * can tell us if it's streaming or not. But how to do this on
+		 * a per object basis without changing open()s arugments. That
+		 * may be the easiest/only way. XXX
+		 *
+		 */
 
-		/* Did we get a Glob, or a IO::Handle subclass? */
-		if (SvTYPE(path) == SVt_PVGV) {
-			datasource->is_streaming = 0;
-		} else {
+		if (sv_isobject(path) && sv_derived_from(path, "IO::Socket")) {
 			datasource->is_streaming = 1;
+		} else {
+			datasource->is_streaming = 0;
 		}
 
-		/* pull the fd fileno from the PerlIO object */
-		//datasource->stream = (void *)PerlIO_fileno(IoIFP(GvIOp(path)));
-		datasource->stream = IoIFP(GvIOp(path));
+		/* dereference and get the SV* that contains the Magic & FH,
+		 * then pull the fd from the PerlIO object */
+		datasource->stream = IoIFP(GvIOp(SvRV(path)));
 
 	} else {
 
@@ -258,12 +267,13 @@ read(obj, buffer, nbytes = 4096, word = 2, sgned = 1)
 	sysread = 1
 
 	CODE:
+	{
 	int bytes = 0;
 	int total_bytes_read = 0;
 	int read_comments = 0;
+	int old_bitstream, cur_bitstream;
 
-	char  buff[nbytes];
-	char* buffptr = &buff[0];
+	char *readBuffer = alloca(nbytes);
 
 	HV *self = (HV *) SvRV(obj);
 	OggVorbis_File *vf = (OggVorbis_File *) SvIV(*(my_hv_fetch(self, "VFILE")));
@@ -273,8 +283,8 @@ read(obj, buffer, nbytes = 4096, word = 2, sgned = 1)
 	/* See http://www.xiph.org/ogg/vorbis/doc/vorbisfile/ov_read.html for
 	 * a description of the bitstream parameter. This allows streaming
 	 * without a hack like icy-metaint */
-	int cur_bitstream = (int) SvIV(*(my_hv_fetch(self, "BSTREAM")));
-	int old_bitstream = cur_bitstream;
+	cur_bitstream = (int) SvIV(*(my_hv_fetch(self, "BSTREAM")));
+	old_bitstream = cur_bitstream;
 
 	/* When we get a new bitstream, re-read the comment fields */
 	read_comments = (int)SvIV(*(my_hv_fetch(self, "READCOMMENTS")));
@@ -283,7 +293,7 @@ read(obj, buffer, nbytes = 4096, word = 2, sgned = 1)
 	 * read until we hit the requested number of bytes */
 	while (nbytes > 0) {
 
-		bytes = ov_read(vf, buffptr, nbytes, endian, word, sgned, &cur_bitstream);
+		bytes = ov_read(vf, readBuffer, nbytes, endian, word, sgned, &cur_bitstream);
 
 		if (bytes && read_comments != 0) {
 			__read_comments(self, vf);
@@ -307,7 +317,7 @@ read(obj, buffer, nbytes = 4096, word = 2, sgned = 1)
 		} else {
 
 			total_bytes_read += bytes;
-			buffptr += bytes;
+			readBuffer += bytes;
 			nbytes  -= bytes;
 
 			/* did we enter a new logical bitstream? */
@@ -325,11 +335,13 @@ read(obj, buffer, nbytes = 4096, word = 2, sgned = 1)
 	sv_setiv(*my_hv_fetch(self, "READCOMMENTS"), (IV)read_comments);
 
 	/* copy the buffer into our passed SV* */
-	sv_setpvn(buffer, &buff[0], total_bytes_read);
+	sv_setpvn(buffer, readBuffer-total_bytes_read, total_bytes_read);
 
 	if (bytes < 0) XSRETURN_UNDEF;
 
 	RETVAL = total_bytes_read;
+
+	}
 
 	OUTPUT:
 	RETVAL
@@ -365,7 +377,6 @@ DESTROY (obj)
 	ov_clear(vf);
 	safefree(vf);
 
-
 # For all of the below, see:
 # http://www.xiph.org/ogg/vorbis/doc/vorbisfile/fileinfo.html for a
 # description of the functions that duplicate the vorbisfile API.
@@ -391,6 +402,8 @@ pcm_seek (obj, pos, page = 0)
 	int page;
 
 	CODE:
+	{
+
 	HV *self = (HV *) SvRV(obj);
 	OggVorbis_File *vf = (OggVorbis_File *) SvIV(*(my_hv_fetch(self, "VFILE")));
 
@@ -398,6 +411,8 @@ pcm_seek (obj, pos, page = 0)
 		RETVAL = ov_pcm_seek(vf, pos);
 	} else {
 		RETVAL = ov_pcm_seek_page(vf, pos);
+	}
+
 	}
 
 	OUTPUT:
@@ -410,6 +425,8 @@ time_seek (obj, pos, page = 0)
 	int page;
 
 	CODE:
+	{
+
 	HV *self = (HV *) SvRV(obj);
 	OggVorbis_File *vf = (OggVorbis_File *) SvIV(*(my_hv_fetch(self, "VFILE")));
 
@@ -417,6 +434,8 @@ time_seek (obj, pos, page = 0)
 		RETVAL = ov_time_seek(vf, pos);
 	} else {
 		RETVAL = ov_time_seek_page(vf, pos);
+	}
+
 	}
 
 	OUTPUT:
@@ -428,10 +447,14 @@ bitrate (obj, i = -1)
 	int i;
 
 	CODE:
+	{
+
 	HV *self = (HV *) SvRV(obj);
 	OggVorbis_File *vf = (OggVorbis_File *) SvIV(*(my_hv_fetch(self, "VFILE")));
 
 	RETVAL = ov_bitrate(vf, i);
+
+	}
 
 	OUTPUT:
 	RETVAL
@@ -481,10 +504,13 @@ serialnumber (obj, i = -1)
 	int i;
 
 	CODE:
+	{
+
 	HV *self = (HV *) SvRV(obj);
 	OggVorbis_File *vf = (OggVorbis_File *) SvIV(*(my_hv_fetch(self, "VFILE")));
 
 	RETVAL = ov_serialnumber(vf, i);
+	}
 
 	OUTPUT:
 	RETVAL
@@ -495,10 +521,14 @@ raw_total (obj, i = -1)
 	int i;
 
 	CODE:
+	{
+
 	HV *self = (HV *) SvRV(obj);
 	OggVorbis_File *vf = (OggVorbis_File *) SvIV(*(my_hv_fetch(self, "VFILE")));
 
 	RETVAL = ov_raw_total(vf, i);
+
+	}
 
 	OUTPUT:
 	RETVAL
@@ -509,10 +539,14 @@ pcm_total (obj, i = -1)
 	int i;
 
 	CODE:
+	{
+
 	HV *self = (HV *) SvRV(obj);
 	OggVorbis_File *vf = (OggVorbis_File *) SvIV(*(my_hv_fetch(self, "VFILE")));
 
 	RETVAL = ov_pcm_total(vf, i);
+
+	}
 
 	OUTPUT:
 	RETVAL
@@ -523,10 +557,14 @@ time_total (obj, i = -1)
 	int i;
 
 	CODE:
+	{
+
 	HV *self = (HV *) SvRV(obj);
 	OggVorbis_File *vf = (OggVorbis_File *) SvIV(*(my_hv_fetch(self, "VFILE")));
 
 	RETVAL = ov_time_total(vf, i);
+
+	}
 
 	OUTPUT:
 	RETVAL
