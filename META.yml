@@ -1,10 +1,13 @@
-# http://module-build.sourceforge.net/META-spec.html
-#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
-name:         Ogg-Vorbis-Decoder
-version:      0.6
-version_from: Decoder.pm
-installdirs:  site
-requires:
-
+abstract: An object-oriented Ogg Vorbis to decoder
+author: EMERITUS
 distribution_type: module
-generated_by: ExtUtils::MakeMaker version 6.21
+generated_by: Module::Install version 0.64
+license: perl
+name: Ogg-Vorbis-Decoder
+no_index:
+  directory:
+    - inc
+    - t
+requires:
+  perl: 5.005
+version: 0.7

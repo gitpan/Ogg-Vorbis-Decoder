@@ -1,4 +1,4 @@
-Ogg/Vorbis/Decoder version 0.02
+Ogg::Vorbis::Decoder
 ============================
 
 This module provides an object-oriented interface to the decoding
@@ -17,13 +17,14 @@ To install this module type the following:
 
 DEPENDENCIES
 
-Inline::C, libogg, libvorbis, libogg-dev, libvorbis-dev.
+libogg, libvorbis, libogg-dev, libvorbis-dev.
 
-Inline::C is available from CPAN.  The libogg and libvorbis libraries
-are available from xiph.org.  They are also available through Debian's
-apt-get and Mandrake's rpmdrake (and perhaps Redhat's up2date).
+The libogg and libvorbis libraries are available from xiph.org.  They are also
+available through Debian's apt-get and Mandrake's rpmdrake (and perhaps Redhat's up2date).
 
 COPYRIGHT AND LICENCE
+
+Copyright (c) 2004-2007, Dan Sully.  All Rights Reserved.
 
 Copyright (c) 2003, Dan Pemstein.  All Rights Reserved.
 

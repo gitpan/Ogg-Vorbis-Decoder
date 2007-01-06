@@ -1,4 +1,4 @@
-/* $Id: Decoder.xs,v 1.3 2004/04/14 06:37:30 daniel Exp $ */
+/* $Id: Decoder.xs 348 2005-07-14 02:32:46Z dsully $ */
 
 #ifdef __cplusplus
 "C" {
@@ -275,10 +275,19 @@ read(obj, buffer, nbytes = 4096, word = 2, sgned = 1)
 
 	char *readBuffer = alloca(nbytes);
 
+	/* for replay gain */
+	/* not yet.. */
+	int use_rg = 0;
+	float ***pcm;
+
 	HV *self = (HV *) SvRV(obj);
 	OggVorbis_File *vf = (OggVorbis_File *) SvIV(*(my_hv_fetch(self, "VFILE")));
 
 	if (!vf) XSRETURN_UNDEF;
+
+	if (ix) {
+		/* empty */
+	}
 
 	/* See http://www.xiph.org/ogg/vorbis/doc/vorbisfile/ov_read.html for
 	 * a description of the bitstream parameter. This allows streaming
@@ -293,7 +302,18 @@ read(obj, buffer, nbytes = 4096, word = 2, sgned = 1)
 	 * read until we hit the requested number of bytes */
 	while (nbytes > 0) {
 
-		bytes = ov_read(vf, readBuffer, nbytes, endian, word, sgned, &cur_bitstream);
+		if (use_rg) {
+
+                	bytes = ov_read_float(vf, pcm, nbytes, &cur_bitstream);
+
+                	if (bytes > 0) {
+                        	/* bytes = vorbis_process_replaygain(pcm, bytes, channels, readBuffer, rg_scale); */
+			}
+
+		} else {
+
+			bytes = ov_read(vf, readBuffer, nbytes, endian, word, sgned, &cur_bitstream);
+		}
 
 		if (bytes && read_comments != 0) {
 			__read_comments(self, vf);
@@ -382,14 +402,16 @@ DESTROY (obj)
 # description of the functions that duplicate the vorbisfile API.
 
 int
-raw_seek (obj, pos)
+raw_seek (obj, pos, whence = 0)
 	SV* obj;
 	long pos;
+	int whence;
 
 	CODE:
 	HV *self = (HV *) SvRV(obj);
 	OggVorbis_File *vf = (OggVorbis_File *) SvIV(*(my_hv_fetch(self, "VFILE")));
 	
+	/* XXX - handle whence */
 	RETVAL = ov_raw_seek(vf, pos);
 
 	OUTPUT:

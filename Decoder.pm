@@ -3,7 +3,7 @@ package Ogg::Vorbis::Decoder;
 use strict;
 use vars qw($VERSION);
 
-$VERSION = '0.6';
+$VERSION = '0.7';
 
 BOOT_XS: {
         # If I inherit DynaLoader then I inherit AutoLoader
@@ -19,38 +19,6 @@ BOOT_XS: {
 sub current_bitstream {
 	my $self = shift;
 	return $self->{'BSTREAM'};
-}
-
-sub info {
-	my ($self, $key) = @_;
-
-	$self->_read_info() unless $self->{'INFO'};
-
-	return $self->{'INFO'}->{$key} if $key;
-	return $self->{'INFO'};
-}
-
-sub comment_tags {
-	my $self = shift;
-
-	$self->_read_comments() unless $self->{'COMMENTS'};
-
-	return map { uc } keys %{$self->{'COMMENTS'}};
-}
-
-sub comment {
-	my $self = shift;
-	my $key  = shift || return undef;
-
-	$self->_read_comments() unless $self->{'COMMENTS'};
-
-	my $result = $self->{'COMMENTS'}->{uc $key};
-
-	if (scalar @$result > 1) {
-		return @$result;
-	} else {
-		return $result->[0];
-	}
 }
 
 1;
@@ -101,18 +69,24 @@ the object is collected by the garbage handler. Returns C<undef> on failure.
 
 =head1 INSTANCE METHODS
 
-=head2 C<read ($buffer, [%params])>
+=head2 C<read ($buffer, [$size, $word, $signed])>
 
 Reads PCM data from the Vorbis stream into C<$buffer>.  Returns the
 number of bytes read, 0 when it reaches the end of the stream, or a
-value less than 0 on error.  The optional params hash can contain the
-following keys (with corresponding default values):
-C<{ buffsize => 4096, bigendianp => 0, word => 2, signed => 1,
-bitstream => 0 }>.  Consult the Vorbisfile API
-(http://www.xiph.org/ogg/vorbis/doc/vorbisfile/reference.html) for an
-explanation of the various values.  Note that OVD maintains the
-bitstream value internally.  Providing a new bitstream to C<read> will
-automatically update this value within the object.
+value less than 0 on error. 
+
+The optional parameters include (with corresponding default values):
+
+C<size = 4096>
+C<word = 2>
+C<signed = 1>
+
+Consult the Vorbisfile API (http://www.xiph.org/ogg/vorbis/doc/vorbisfile/reference.html) 
+for an explanation of the various values.
+
+=head2 C<sysread ($buffer, [$size, $word, $signed])>
+
+An alias for C<read>
 
 =head2 C<raw_seek ($pos)>
 
@@ -133,7 +107,7 @@ seconds.  The optional C<$page> parameter is a boolean flag that, if
 set to true, will cause the method to seek to the closest full page
 preceding the specified location.  Returns 0 on success.
 
-=head2 C<get_current_bitstream ()>
+=head2 C<current_bitstream ()>
 
 Returns the current logical bitstream of the decoder.  This matches the
 bitstream paramer optionally passed to C<read>.  Useful for saving a
@@ -204,7 +178,7 @@ Dan Pemstein E<lt>dan@lcws.orgE<gt>
 
 =head1 COPYRIGHT
 
-Copyright (c) 2004, Dan Sully.  All Rights Reserved.
+Copyright (c) 2004-2007, Dan Sully.  All Rights Reserved.
 
 Copyright (c) 2003, Dan Pemstein.  All Rights Reserved.
 
