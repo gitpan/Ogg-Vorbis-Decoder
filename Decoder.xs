@@ -24,7 +24,7 @@
 #include <vorbis/vorbisfile.h>
 
 /* strlen the length automatically */
-#define my_hv_store(a,b,c)   hv_store(a,b,strlen(b),c,0)
+#define my_hv_store(a,b,c)   (void)hv_store(a,b,strlen(b),c,0)
 #define my_hv_fetch(a,b)     hv_fetch(a,b,strlen(b),0)
 
 #ifdef WORDS_BIGENDIAN
@@ -81,7 +81,7 @@ static int ovcb_seek(void *vdatasource, ogg_int64_t offset, int whence) {
 
 	/* For some reason PerlIO_seek fails miserably here. < 5.8.1 works */
 	/* return PerlIO_seek(datasource->stream, offset, whence); */
-	
+
 	return fseek(PerlIO_findFILE(datasource->stream), offset, whence);
 }
 
@@ -133,7 +133,7 @@ void __read_comments(HV *self, OggVorbis_File *vf) {
 			ta = newAV();
 			ts = newRV_noinc((SV*) ta);
 
-			hv_store(comments, vc->user_comments[i], half - vc->user_comments[i], ts, 0);
+			(void)hv_store(comments, vc->user_comments[i], half - vc->user_comments[i], ts, 0);
 
 		} else {
 
@@ -194,7 +194,7 @@ open(class, path)
 	if (SvOK(path) && (SvTYPE(SvRV(path)) != SVt_PVGV)) {
 
 		if ((datasource->stream = PerlIO_open((char*)SvPV_nolen(path), "r")) == NULL) {
-			ov_clear(vf);
+			safefree(vf);
 			printf("failed on open: [%d] - [%s]\n", errno, strerror(errno));
 			XSRETURN_UNDEF;
 		}
@@ -226,7 +226,7 @@ open(class, path)
 
 		XSRETURN_UNDEF;
 	}
-	
+
 	if ((ret = ov_open_callbacks((void*)datasource, vf, NULL, 0, vorbis_callbacks)) < 0) {
 
 		warn("Failed on registering callbacks: [%d]\n", ret);
@@ -278,7 +278,7 @@ read(obj, buffer, nbytes = 4096, word = 2, sgned = 1)
 	/* for replay gain */
 	/* not yet.. */
 	int use_rg = 0;
-	float ***pcm;
+	float ***pcm = NULL;
 
 	HV *self = (HV *) SvRV(obj);
 	OggVorbis_File *vf = (OggVorbis_File *) SvIV(*(my_hv_fetch(self, "VFILE")));
@@ -326,14 +326,14 @@ read(obj, buffer, nbytes = 4096, word = 2, sgned = 1)
 
 		} else if (bytes == OV_HOLE || bytes == OV_EBADLINK) {
 			/* error in stream, but we don't care, move along */
-			
+
 		} else if (bytes < 0 && errno == EINTR) {
 			/* try to re-read, same as above */
 
 		} else if (bytes < 0) {
 			/* error */
 			break;
-			
+
 		} else {
 
 			total_bytes_read += bytes;
@@ -410,7 +410,7 @@ raw_seek (obj, pos, whence = 0)
 	CODE:
 	HV *self = (HV *) SvRV(obj);
 	OggVorbis_File *vf = (OggVorbis_File *) SvIV(*(my_hv_fetch(self, "VFILE")));
-	
+
 	/* XXX - handle whence */
 	RETVAL = ov_raw_seek(vf, pos);
 
